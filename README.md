@@ -1,8 +1,8 @@
 # slack-emoji-forge
 
-Generate per-species, per-role custom Slack emoji for Fiat agents.
+Generate per-species, per-role avatar icons for Fiat agents.
 
-Takes Google Noto Emoji animal icons, composites a role badge (Hand = blue dot, Buddy = yellow dot), and outputs Slack-ready 128x128 PNGs.
+Takes Google Noto Emoji animal icons, composites a role badge, adds a background for Slack dark mode compatibility, and outputs 128x128 PNGs hosted via raw GitHub URLs for use as `icon_url` in Slack's `chat.postMessage`.
 
 ## Quick Start
 
@@ -22,25 +22,25 @@ python forge.py --no-badge             # Plain icons, no role badge
 python forge.py --download-only        # Just fetch Noto sources
 ```
 
-## Upload to Slack
+## Hosting
 
-```bash
-export SLACK_TEAM=your-team
-export SLACK_COOKIE='d=xoxd-...'
-./upload.sh                            # Upload all
-./upload.sh output/fox-*.png           # Upload specific
+Generated PNGs are committed to `samples/` and served via raw GitHub URLs:
+
 ```
+https://raw.githubusercontent.com/yuktishala/slack-emoji-forge/main/samples/{species}-{variant}.png
+```
+
+Used as `icon_url` in Slack `chat.postMessage` with `chat:write.customize` scope.
 
 ## Structure
 
 ```
 sources/         Downloaded Noto Emoji PNGs (gitignored)
 badges/          Role badge overlays (hand.png, buddy.png)
-output/          Generated emoji (gitignored)
+samples/         Committed output for hosting via GitHub raw URLs
+output/          Working output (gitignored)
 species.json     Species name → Unicode codepoint mapping
 forge.py         Compositing script
-upload.sh        Bulk upload wrapper around emojinator
-upstream/        git submodule → smashwilson/slack-emojinator
 ```
 
 ## Custom Badges
@@ -49,4 +49,4 @@ Replace `badges/hand.png` and `badges/buddy.png` with your own 48x48 RGBA PNGs. 
 
 ## Adding Species
 
-Edit `species.json` — keys are species names (used in filenames and Slack emoji names), values are Unicode codepoints for Google Noto Emoji.
+Edit `species.json` — keys are species names (used in filenames), values are Unicode codepoints for Google Noto Emoji.
