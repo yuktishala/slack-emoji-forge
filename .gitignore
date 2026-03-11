@@ -1,0 +1,6 @@
+output/
+sources/*.png
+sources/*.svg
+__pycache__/
+*.pyc
+.venv/
