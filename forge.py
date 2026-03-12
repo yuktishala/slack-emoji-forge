@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
 """
-slack-emoji-forge: Generate per-species, per-role Slack custom emoji.
+slack-emoji-forge: Generate per-species, per-role Slack avatar icons.
 
-Downloads Noto Emoji SVGs from Google, composites a role badge in the
-bottom-right corner, and outputs 128x128 PNGs named for Slack upload:
-  {species}-hand.png, {species}-buddy.png
+Design (v12 frozen):
+  - 128x128 canvas with #1a1d21 background (Slack dark mode)
+  - 80% animal emoji, positioned top-left
+  - ~30% area role badge, bottom-right, with moderate drop shadow
+  - Hand badge: medium-light skin tone hand (Noto Emoji)
+  - Buddy badge: eye emoji (Noto Emoji)
+
+Output naming: {species}-{role}.png (e.g., fox-hand.png, fox-buddy.png)
+Startup.sh resolves icon_url as:
+  https://raw.githubusercontent.com/yuktishala/slack-emoji-forge/main/output/{species}-{role}.png
 
 Usage:
   python forge.py                    # Generate all species x all roles
@@ -15,13 +22,12 @@ Usage:
 
 import argparse
 import json
-import os
+import math
 import sys
-from io import BytesIO
 from pathlib import Path
 
 import requests
-from PIL import Image
+from PIL import Image, ImageFilter
 
 try:
     import cairosvg
@@ -40,13 +46,26 @@ NOTO_PNG_URL = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/pn
 # Fallback: SVG source
 NOTO_SVG_URL = "https://raw.githubusercontent.com/googlefonts/noto-emoji/main/svg/emoji_u{codepoint}.svg"
 
+# === v12 Design Constants ===
 ICON_SIZE = 128
-BADGE_SIZE = 48
-BADGE_OFFSET = ICON_SIZE - BADGE_SIZE  # bottom-right corner
+BG_COLOR = (26, 29, 33, 255)  # #1a1d21 — Slack dark mode chat background
+
+# Animal: 80% of canvas, top-left aligned
+ANIMAL_SIZE = int(ICON_SIZE * 0.80)  # 102px
+ANIMAL_OFFSET = (0, 0)
+
+# Badge: ~30% of canvas area → sqrt(0.30) * 128 ≈ 70px
+BADGE_SIZE = 70
+BADGE_OFFSET = (ICON_SIZE - BADGE_SIZE, ICON_SIZE - BADGE_SIZE)  # bottom-right
+
+# Drop shadow for badge
+SHADOW_SPREAD = 6
+SHADOW_BLUR = 5
+SHADOW_ALPHA_MULT = 1.5  # boost shadow opacity
 
 # Role definitions: name -> badge filename
 ROLES = {
-    "hand": "hand.png",
+    "hand": "hand-medium-light.png",
     "buddy": "buddy.png",
 }
 
@@ -86,47 +105,68 @@ def download_source(species: str, codepoint: str) -> Path:
 
 
 def load_badge(role: str) -> Image.Image | None:
-    """Load and resize a role badge."""
+    """Load badge image for a role."""
     badge_file = BADGES_DIR / ROLES[role]
     if not badge_file.exists():
+        print(f"  WARNING: badge not found: {badge_file}", file=sys.stderr)
         return None
-    badge = Image.open(badge_file).convert("RGBA")
-    return badge.resize((BADGE_SIZE, BADGE_SIZE), Image.LANCZOS)
+    return Image.open(badge_file).convert("RGBA")
+
+
+def make_shadow(badge: Image.Image) -> Image.Image:
+    """Create a drop shadow from the badge's alpha channel."""
+    # Extract alpha as grayscale shadow
+    alpha = badge.split()[3]
+
+    # Create shadow layer (black with badge's alpha, boosted)
+    shadow = Image.new("RGBA", badge.size, (0, 0, 0, 0))
+    for y in range(badge.height):
+        for x in range(badge.width):
+            a = alpha.getpixel((x, y))
+            boosted = min(255, int(a * SHADOW_ALPHA_MULT))
+            shadow.putpixel((x, y), (0, 0, 0, boosted))
+
+    # Expand shadow by spread amount
+    expanded_size = (badge.width + SHADOW_SPREAD * 2, badge.height + SHADOW_SPREAD * 2)
+    shadow_expanded = Image.new("RGBA", expanded_size, (0, 0, 0, 0))
+    shadow_expanded.paste(shadow, (SHADOW_SPREAD, SHADOW_SPREAD))
+
+    # Blur
+    shadow_expanded = shadow_expanded.filter(ImageFilter.GaussianBlur(radius=SHADOW_BLUR))
+
+    return shadow_expanded
 
 
 def composite(base_path: Path, badge: Image.Image | None, output_path: Path):
-    """Composite base icon with optional badge overlay."""
-    base = Image.open(base_path).convert("RGBA").resize((ICON_SIZE, ICON_SIZE), Image.LANCZOS)
+    """Composite: dark bg + 80% animal top-left + badge bottom-right with drop shadow."""
+    # Dark background
+    canvas = Image.new("RGBA", (ICON_SIZE, ICON_SIZE), BG_COLOR)
+
+    # Animal at 80%, top-left
+    animal = Image.open(base_path).convert("RGBA").resize(
+        (ANIMAL_SIZE, ANIMAL_SIZE), Image.LANCZOS
+    )
+    canvas.alpha_composite(animal, dest=ANIMAL_OFFSET)
 
     if badge is not None:
-        base.alpha_composite(badge, dest=(BADGE_OFFSET, BADGE_OFFSET))
+        # Resize badge
+        sized_badge = badge.resize((BADGE_SIZE, BADGE_SIZE), Image.LANCZOS)
 
-    base.save(output_path, "PNG", optimize=True)
+        # Drop shadow
+        shadow = make_shadow(sized_badge)
+        # Shadow offset: centered on badge position, accounting for spread expansion
+        shadow_x = BADGE_OFFSET[0] - SHADOW_SPREAD
+        shadow_y = BADGE_OFFSET[1] - SHADOW_SPREAD
+        canvas.alpha_composite(shadow, dest=(shadow_x, shadow_y))
 
+        # Badge on top
+        canvas.alpha_composite(sized_badge, dest=BADGE_OFFSET)
 
-def generate_placeholder_badges():
-    """Generate simple colored circle badges if none exist."""
-    colors = {
-        "hand": (66, 133, 244, 220),    # blue
-        "buddy": (251, 188, 4, 220),     # yellow
-    }
-    for role, color in colors.items():
-        path = BADGES_DIR / f"{role}.png"
-        if path.exists():
-            continue
-        img = Image.new("RGBA", (BADGE_SIZE, BADGE_SIZE), (0, 0, 0, 0))
-        # Draw a filled circle
-        for y in range(BADGE_SIZE):
-            for x in range(BADGE_SIZE):
-                cx, cy = BADGE_SIZE / 2, BADGE_SIZE / 2
-                if (x - cx) ** 2 + (y - cy) ** 2 <= (cx - 2) ** 2:
-                    img.putpixel((x, y), color)
-        img.save(path, "PNG")
-        print(f"  Generated placeholder badge: {path.name}")
+    canvas.save(output_path, "PNG", optimize=True)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Forge Slack custom emoji from Noto + role badges")
+    parser = argparse.ArgumentParser(description="Forge Slack avatar icons (v12 design)")
     parser.add_argument("--species", help="Comma-separated species to generate (default: all)")
     parser.add_argument("--roles", help="Comma-separated roles (default: all)", default=",".join(ROLES.keys()))
     parser.add_argument("--download-only", action="store_true", help="Only download source icons")
@@ -159,9 +199,6 @@ def main():
     if args.download_only:
         return
 
-    # Generate placeholder badges if needed
-    generate_placeholder_badges()
-
     # Load badges
     badges = {}
     for role in roles:
@@ -177,8 +214,9 @@ def main():
             out = OUTPUT_DIR / f"{species}-{role}.png"
             composite(source_path, badge, out)
             count += 1
+            print(f"  {species}-{role}.png")
 
-    print(f"\nForged {count} emoji in {OUTPUT_DIR}/")
+    print(f"\nForged {count} icons in {OUTPUT_DIR}/")
 
 
 if __name__ == "__main__":

@@ -1,4 +1,3 @@
-output/
 sources/*.png
 sources/*.svg
 __pycache__/
