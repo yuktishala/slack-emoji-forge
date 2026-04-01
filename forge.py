@@ -67,6 +67,7 @@ SHADOW_ALPHA_MULT = 1.5  # boost shadow opacity
 ROLES = {
     "hand": "hand-medium-light.png",
     "buddy": "buddy.png",
+    "counsel": "counsel.png",
 }
 
 
