@@ -166,12 +166,53 @@ def composite(base_path: Path, badge: Image.Image | None, output_path: Path):
     canvas.save(output_path, "PNG", optimize=True)
 
 
+def generate_catalog(species: dict, output_dir: Path, catalog_path: Path):
+    """Generate catalog.html listing all species with their rendered icons."""
+    rows = []
+    for slug in sorted(species.keys()):
+        cp = species[slug]
+        cells = "".join(
+            f'<td><img src="output/{slug}-{role}.png" width="64" height="64" title="{slug}-{role}"></td>'
+            for role in ROLES
+        )
+        rows.append(f"<tr><td><code>{slug}</code></td><td><code>U+{cp.upper()}</code></td>{cells}</tr>")
+
+    role_headers = "".join(f"<th>{r}</th>" for r in ROLES)
+    html = f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>slack-emoji-forge catalog ({len(species)} species)</title>
+<style>
+  body {{ font-family: monospace; background: #1a1d21; color: #d1d2d3; padding: 16px; }}
+  h1 {{ color: #fff; }}
+  table {{ border-collapse: collapse; }}
+  th, td {{ padding: 6px 10px; border: 1px solid #333; text-align: center; }}
+  th {{ background: #222529; }}
+  tr:hover {{ background: #222529; }}
+  img {{ display: block; margin: auto; }}
+</style>
+</head>
+<body>
+<h1>slack-emoji-forge catalog &mdash; {len(species)} species</h1>
+<table>
+<tr><th>slug</th><th>codepoint</th>{role_headers}</tr>
+{"".join(rows)}
+</table>
+</body>
+</html>
+"""
+    catalog_path.write_text(html, encoding="utf-8")
+    print(f"Catalog written: {catalog_path} ({len(species)} entries)")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Forge Slack avatar icons (v12 design)")
     parser.add_argument("--species", help="Comma-separated species to generate (default: all)")
     parser.add_argument("--roles", help="Comma-separated roles (default: all)", default=",".join(ROLES.keys()))
     parser.add_argument("--download-only", action="store_true", help="Only download source icons")
     parser.add_argument("--no-badge", action="store_true", help="Generate plain icons without badge overlay")
+    parser.add_argument("--catalog", action="store_true", help="Generate catalog.html and exit")
     args = parser.parse_args()
 
     SOURCES_DIR.mkdir(exist_ok=True)
@@ -179,6 +220,10 @@ def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
 
     all_species = load_species()
+
+    if args.catalog:
+        generate_catalog(all_species, OUTPUT_DIR, REPO_ROOT / "catalog.html")
+        return
     selected = args.species.split(",") if args.species else list(all_species.keys())
     roles = args.roles.split(",")
 
