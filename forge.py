@@ -87,16 +87,15 @@ def composite(base_path: Path, output_path: Path):
 
 
 def generate_catalog(species: dict, catalog_path: Path):
-    """Generate catalog.html listing all totem species."""
-    rows = []
+    """Generate catalog.html listing all totem species in a grid layout."""
+    cards = []
     for slug in sorted(species.keys()):
         cp = species[slug]
-        rows.append(
-            f"<tr>"
-            f"<td><img src=\"output/{slug}.png\" width=\"64\" height=\"64\" title=\"{slug}\"></td>"
-            f"<td><code>{slug}</code></td>"
-            f"<td><code>U+{cp.upper()}</code></td>"
-            f"</tr>"
+        cards.append(
+            f'<div class="card" title="U+{cp.upper()}">'
+            f'<img src="output/{slug}.png" width="64" height="64" alt="{slug}">'
+            f'<div class="name">{slug}</div>'
+            f'</div>'
         )
 
     html = f"""<!DOCTYPE html>
@@ -106,20 +105,32 @@ def generate_catalog(species: dict, catalog_path: Path):
 <title>slack-emoji-forge — {len(species)} totems</title>
 <style>
   body {{ font-family: monospace; background: #1a1d21; color: #d1d2d3; padding: 16px; }}
-  h1 {{ color: #fff; }}
-  table {{ border-collapse: collapse; }}
-  th, td {{ padding: 6px 10px; border: 1px solid #333; text-align: center; vertical-align: middle; }}
-  th {{ background: #222529; }}
-  tr:hover {{ background: #222529; }}
-  img {{ display: block; margin: auto; }}
+  h1 {{ color: #fff; margin-bottom: 4px; }}
+  p.count {{ color: #888; margin: 0 0 16px; }}
+  .grid {{
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+    gap: 8px;
+  }}
+  .card {{
+    background: #222529;
+    border-radius: 6px;
+    padding: 10px 6px 8px;
+    text-align: center;
+    cursor: default;
+    transition: background 0.15s;
+  }}
+  .card:hover {{ background: #2c3036; }}
+  .card img {{ display: block; margin: 0 auto 6px; }}
+  .name {{ font-size: 11px; color: #aaa; word-break: break-all; }}
 </style>
 </head>
 <body>
-<h1>slack-emoji-forge &mdash; {len(species)} totems</h1>
-<table>
-<tr><th>icon</th><th>slug</th><th>codepoint</th></tr>
-{"".join(rows)}
-</table>
+<h1>slack-emoji-forge</h1>
+<p class="count">{len(species)} totems</p>
+<div class="grid">
+{"".join(cards)}
+</div>
 </body>
 </html>
 """
